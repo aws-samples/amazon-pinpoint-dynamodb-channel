@@ -1,0 +1,64 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Amazon Pinpoint Connect Channel.  This application will write messages to DynamoDB triggered by Amazon Pinpoint.  Written in Python3.
+Transform: AWS::Serverless-2016-10-31
+
+Resources:
+  PinpointCustomChannelPoll:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        -
+          AttributeName: "EndpointId"
+          AttributeType: "S"
+        -
+          AttributeName: "Surface"
+          AttributeType: "S"
+      KeySchema:
+        -
+          AttributeName: "EndpointId"
+          KeyType: "HASH"
+        -
+          AttributeName: "Surface"
+          KeyType: "RANGE"
+      ProvisionedThroughput:
+        ReadCapacityUnits: "5"
+        WriteCapacityUnits: "5"
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+
+  PinpointDynamoDBFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: AmazonPinpointDynamoDBChannel
+      CodeUri: pinpointdynamodb/
+      Handler: app.lambda_handler
+      Runtime: python3.7
+      Timeout: 60
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref PinpointCustomChannelPoll
+      Policies:
+        - Statement:
+          - Sid: WriteDynamoDB
+            Effect: Allow
+            Action: dynamodb:PutItem
+            Resource: !GetAtt PinpointCustomChannelPoll.Arn
+          - Sid: PinpointPutEvents
+            Effect: Allow
+            Action: mobiletargeting:PutEvents
+            Resource: !Sub arn:${AWS::Partition}:mobiletargeting:${AWS::Region}:${AWS::AccountId}:*
+
+
+  PinpointInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref PinpointDynamoDBFunction
+      Principal: !Sub pinpoint.${AWS::Region}.amazonaws.com
+      SourceArn: !Sub arn:${AWS::Partition}:mobiletargeting:${AWS::Region}:${AWS::AccountId}:apps/*
+
+Outputs:
+  PinpointDynamoDBFunctionArn:
+    Description: "A function invoked by an Amazon Pinpoint Campaign or Journey that will will write messages to DynamoDB"
+    Value: !GetAtt PinpointDynamoDBFunction.Arn
